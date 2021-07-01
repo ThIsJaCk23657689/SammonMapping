@@ -6,14 +6,14 @@ in VS_OUT {
 	vec3 FragPos;
 	vec3 Normal;
 } fs_in;
-  
-uniform vec3 lightPos; 
-uniform vec3 viewPos; 
+
+uniform vec3 lightPos;
+uniform vec3 viewPos;
 uniform vec3 lightColor;
 uniform vec3 objectColor;
 
 void main() {
-    
+
     vec3 norm = normalize(fs_in.Normal);
 
     vec4 color = vec4(1.0f);
@@ -22,8 +22,8 @@ void main() {
     // ambient
     float ambientStrength = 0.1;
     vec3 ambient = ambientStrength * lightColor;
-  	
-    // diffuse 
+
+    // diffuse
     vec3 lightDir = normalize(lightPos - fs_in.FragPos);
     float diff = dot(norm, lightDir);
     if (diff <= 0) {
@@ -31,16 +31,16 @@ void main() {
         norm = -norm;
     }
     vec3 diffuse = diff * lightColor;
-    
+
     // specular
     float specularStrength = 0.5;
     vec3 viewDir = normalize(viewPos - fs_in.FragPos);
-    vec3 reflectDir = reflect(-lightDir, norm);  
+    vec3 reflectDir = reflect(-lightDir, norm);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0f);
-    vec3 specular = specularStrength * spec * lightColor;  
+    vec3 specular = specularStrength * spec * lightColor;
 
     vec3 result = (ambient + diffuse + specular) * color.rgb;
     result = clamp(result, 0.0f, 1.0f);
-        
-    FragColor = vec4(result, color.a);
+
+    FragColor = vec4(color.rgb, color.a);
 } 

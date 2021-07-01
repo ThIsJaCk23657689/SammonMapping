@@ -4,6 +4,7 @@
 #include "ThirdPersonCamera.h"
 #include "Shader.h"
 #include "MatrixStack.h"
+#include "FileLoader.h"
 #include "Texture2D.h"
 #include "Light.h"
 
@@ -11,7 +12,9 @@
 #include "Cube.h"
 #include "Sphere.h"
 #include "ViewVolume.h"
+#include <random>
 
+std::mt19937_64 rand_generator;
 
 class NexusDemo final : public Nexus::Application {
 public:
@@ -25,13 +28,13 @@ public:
 		Settings.EnableGhostMode = true;
 		Settings.EnableFaceCulling = true;
 		Settings.CullingTypeStr = "Back Face";
-		Settings.ShowOriginAnd3Axes = false;
+		Settings.ShowOriginAnd3Axes = GL_TRUE;
 
 		// Projection Settings Initalize
 		ProjectionSettings.IsPerspective = true;
-		ProjectionSettings.OrthogonalHeight = 5.0f;
+		ProjectionSettings.OrthogonalHeight = 500.0f;
 		ProjectionSettings.ClippingNear = 0.1f;
-		ProjectionSettings.ClippingFar = 500.0f;
+		ProjectionSettings.ClippingFar = 1000.0f;
 		ProjectionSettings.Aspect = (float)Settings.Width / (float)Settings.Height;
 	}
 
@@ -50,13 +53,13 @@ public:
 		// normalShader = std::make_unique<Nexus::Shader>("Shaders/normal_visualization.vs", "Shaders/normal_visualization.fs", "Shaders/normal_visualization.gs");
 		
 		// Create Camera
-		first_camera = std::make_unique<Nexus::FirstPersonCamera>(glm::vec3(0.0f, 2.0f, 5.0f));
+		first_camera = std::make_unique<Nexus::FirstPersonCamera>(glm::vec3(0.0f, 3.0f, 42.0f));
 		third_camera = std::make_unique<Nexus::ThirdPersonCamera>(glm::vec3(0.0f, 0.0f, 5.0f));
 		// first_camera->SetRestrict(true);
 		// first_camera->SetRestrictValue(glm::vec3(-10.0f, 0.0f, -10.0f), glm::vec3(10.0f, 20.0f, 10.0f));
 		// third_camera->SetRestrict(true);
 		// third_camera->SetRestrictValue(glm::vec3(-10.0f, 0.0f, -10.0f), glm::vec3(10.0f, 20.0f, 10.0f));
-		
+
 		// Create Matrix Stack
 		model = std::make_unique<Nexus::MatrixStack>();
 
@@ -73,11 +76,71 @@ public:
 
         // Create a point light
         point_light = std::make_unique<Nexus::PointLight>(glm::vec3(0.0f, 0.0f, 0.0f), true);
+
+        // Loading High Dimension data
+        Nexus::FileLoader::LoadHighDimensionData("Resource/Data/student.data", high_dims_data, data_count, data_dims);
+
+        // compute the sum of every data
+        data_sum = std::vector<GLfloat>(data_count, 0);
+        for (GLuint i = 0; i < data_count; i++) {
+            for (GLuint j = 0; j < data_dims; j++) {
+                data_sum[i] += high_dims_data[i * 9 + j];
+            }
+        }
+
+        // normalize the data (find the max and min)
+        GLfloat sum_max = *max_element(std::begin(data_sum), std::end(data_sum));
+        GLfloat sum_min = *min_element(std::begin(data_sum), std::end(data_sum));
+        for (GLuint i = 0; i < data_count; i++) {
+            data_sum[i] = (data_sum[i] - sum_min) / (sum_max - sum_min);
+        }
+
+
+        // Compute the original distance of the data
+        original_distance = std::vector<GLfloat>(data_count * data_count, 0);
+        projected_distance = std::vector<GLfloat>(data_count * data_count, 0);
+        for (GLuint i = 0; i < data_count; i++) {
+            for (GLuint j = i + 1; j < data_count; j++) {
+                GLfloat temp = 0;
+                for (GLuint n = 0; n < data_dims; n++) {
+                    temp += pow(high_dims_data[i * 9 + n] - high_dims_data[j * 9 + n], 2);
+                }
+                GLfloat distance = sqrt(temp);
+                original_distance[i * data_count + j] = distance;
+            }
+        }
+
+        // Initialize the Q's position (2D)
+        GLfloat distance_max = *max_element(std::begin(original_distance), std::end(original_distance));
+        std::uniform_real_distribution<GLfloat> initialize_position(0, sqrt(distance_max));
+        for (GLuint i = 0; i < data_count; i++) {
+            projected_data.push_back(glm::vec3(initialize_position(rand_generator), initialize_position(rand_generator), 0.0f));
+        }
+
 	}
 
 	void Update() override {
         // Lighting Setting
         point_light->SetPosition(Settings.EnableGhostMode ? first_camera->GetPosition() : third_camera->GetPosition());
+
+        // Start iteration
+        if (iteration <= 1000000) {
+            for (GLuint i = 0; i < data_count; i++) {
+                for (GLuint j = i + 1; j < data_count; j++) {
+
+                    GLfloat new_distance = glm::distance(projected_data[i], projected_data[j]);
+                    // std::cout << "(" << projected_data[i].x << ", " << projected_data[i].y << ") - (" << projected_data[j].x << ", " << projected_data[j].y << ") = " << new_distance << std::endl;
+                    if (new_distance <= 1e-5) new_distance = 1e-3;
+
+                    glm::vec3 delta_Qi = lambda * ((original_distance[i * data_count + j] - new_distance) / new_distance) * (projected_data[i] - projected_data[j]);
+                    glm::vec3 delta_Qj = -delta_Qi;
+                    projected_data[i] = projected_data[i] + delta_Qi;
+                    projected_data[j] = projected_data[j] + delta_Qj;
+                }
+            }
+            lambda = lambda * alpha;
+            iteration += 1;
+        }
 	}
 	
 	void Render(Nexus::DisplayMode monitor_type) override {
@@ -102,9 +165,9 @@ public:
 		myShader->Use();
         myShader->SetMat4("view", view);
         myShader->SetMat4("projection", projection);
-        myShader->SetVec3("viewPos", Settings.EnableGhostMode ? first_camera->GetPosition() : third_camera->GetPosition());
-        myShader->SetVec3("lightPos", point_light->GetPosition());
-        myShader->SetVec3("lightColor", point_light->GetDiffuse());
+        // myShader->SetVec3("viewPos", Settings.EnableGhostMode ? first_camera->GetPosition() : third_camera->GetPosition());
+        // myShader->SetVec3("lightPos", point_light->GetPosition());
+        // myShader->SetVec3("lightColor", point_light->GetDiffuse());
 
 		// ==================== Draw origin and 3 axes ====================
 		if (Settings.ShowOriginAnd3Axes) {
@@ -118,7 +181,7 @@ public:
 		myShader->SetBool("material.enableEmission", false);
 		myShader->SetBool("material.enableEmissionTexture", false);
 		myShader->SetFloat("material.shininess", 64.0f);
-		*/
+
         myShader->SetVec3("objectColor", glm::vec3(0.482352941, 0.68627451, 0.929411765));
 		model->Push();
 		floor->BindTexture(0, texture_checkerboard.get());
@@ -159,15 +222,34 @@ public:
 		floor->Draw(myShader.get(), model->Top());
 		model->Pop();
 		model->Pop();
+		*/
+
+
+		for (GLuint i = 0; i < projected_data.size(); i++) {
+            model->Push();
+            model->Save(glm::translate(model->Top(), projected_data[i]));
+            model->Save(glm::scale(model->Top(), glm::vec3(2.0f, 2.0f, 2.0f)));
+            myShader->SetVec3("objectColor", glm::vec3(0.8, data_sum[i], 0.6));
+            sphere->Draw(myShader.get(), model->Top());
+            model->Pop();
+
+            // std::cout << projected_data[i].x << ", " << projected_data[i].y << std::endl;
+		}
 
 		// third_camera->SetTarget(balls[0].GetPosition());
 		// ImGui::ShowDemoWindow();
 	}
 
 	void ShowDebugUI() override {
+
+        ImGui::Begin("Iteration");
+        ImGui::Text("Iteration %d", iteration);
+        ImGui::Text("Lambda %.8f", lambda);
+        ImGui::Text("Alpha %.3f", alpha);
+        ImGui::End();
+
 		ImGui::Begin("Control Panel");
 		ImGuiTabBarFlags tab_bar_flags = ImGuiBackendFlags_None;
-
 		if (ImGui::BeginTabBar("MyTabBar", tab_bar_flags)) {
 
 			if (ImGui::BeginTabItem("Camera")) {
@@ -259,18 +341,11 @@ public:
 	}
 
 	void DrawOriginAnd3Axes(Nexus::Shader* shader) const {
-		shader->SetBool("material.enableDiffuseTexture", false);
-		shader->SetBool("material.enableSpecularTexture", false);
-		shader->SetBool("material.enableEmission", true);
-		shader->SetBool("material.enableEmissionTexture", false);
-		
 		// Draw the origin (0, 0, 0)
 		model->Push();
 		model->Save(glm::scale(model->Top(), glm::vec3(0.1f, 0.1f, 0.1f)));
-		shader->SetVec4("material.ambient", glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
-		shader->SetVec4("material.diffuse", glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
-		shader->SetVec4("material.specular", glm::vec4(0.4f, 0.4f, 0.4f, 1.0f));
-		shader->SetFloat("material.shininess", 64.0f);
+        shader->SetVec3("objectColor", glm::vec3(0.2, 0.2, 0.2));
+		// shader->SetFloat("material.shininess", 64.0f);
 		sphere->Draw(shader, model->Top());
 		model->Pop();
 
@@ -279,30 +354,24 @@ public:
 		model->Push();
 		model->Save(glm::translate(model->Top(), glm::vec3(5.0f, 0.0f, 0.0f)));
 		model->Save(glm::scale(model->Top(), glm::vec3(10.0f, 0.05f, 0.05f)));
-		shader->SetVec4("material.ambient", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
-		shader->SetVec4("material.diffuse", glm::vec4(1.0f, 0.0f, 0.0f, 1.0));
-		shader->SetVec4("material.specular", glm::vec4(1.0f, 0.0f, 0.0f, 1.0));
-		shader->SetFloat("material.shininess", 64.0f);
+        shader->SetVec3("objectColor", glm::vec3(1.0, 0.0, 0.0));
+		// shader->SetFloat("material.shininess", 64.0f);
 		cube->Draw(shader, model->Top());
 		model->Pop();
 
 		model->Push();
 		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 5.0f, 0.0f)));
 		model->Save(glm::scale(model->Top(), glm::vec3(0.05f, 10.0f, 0.05f)));
-		shader->SetVec4("material.ambient", glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
-		shader->SetVec4("material.diffuse", glm::vec4(0.0f, 1.0f, 0.0f, 1.0));
-		shader->SetVec4("material.specular", glm::vec4(0.0f, 1.0f, 0.0f, 1.0));
-		shader->SetFloat("material.shininess", 64.0f);
+        shader->SetVec3("objectColor", glm::vec3(0.0, 1.0, 0.0));
+		// shader->SetFloat("material.shininess", 64.0f);
 		cube->Draw(shader, model->Top());
 		model->Pop();
 
 		model->Push();
 		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 0.0f, 5.0f)));
 		model->Save(glm::scale(model->Top(), glm::vec3(0.05f, 0.05f, 10.0f)));
-		shader->SetVec4("material.ambient", glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
-		shader->SetVec4("material.diffuse", glm::vec4(0.0f, 0.0f, 1.0f, 1.0));
-		shader->SetVec4("material.specular", glm::vec4(0.0f, 0.0f, 1.0f, 1.0));
-		shader->SetFloat("material.shininess", 64.0f);
+        shader->SetVec3("objectColor", glm::vec3(0.0, 0.0, 1.0));
+		// shader->SetFloat("material.shininess", 64.0f);
 		cube->Draw(shader, model->Top());
 		model->Pop();
 		model->Pop();
@@ -318,7 +387,7 @@ public:
 				view = glm::lookAt(glm::vec3(0.0f, 20.0f, 0.0f), glm::vec3(0.0f), glm::vec3(0.0, 0.0, -1.0));
 				break;
 			case Nexus::DISPLAY_MODE_ORTHOGONAL_Z:
-				view = glm::lookAt(glm::vec3(0.0f, 10.0f, 10.0f), glm::vec3(0.0f, 10.f, 0.0f), glm::vec3(0.0, 1.0, 0.0));
+				view = glm::lookAt(glm::vec3(0.0f, 0.0f, 500.0f), glm::vec3(0.0f, 0.f, 0.0f), glm::vec3(0.0, 1.0, 0.0));
 				break;
 			case Nexus::DISPLAY_MODE_DEFAULT:
 				view = Settings.EnableGhostMode ? first_camera->GetViewMatrix() : third_camera->GetViewMatrix();
@@ -336,7 +405,7 @@ public:
 				projection = GetOrthoProjMatrix(-ProjectionSettings.OrthogonalHeight * ProjectionSettings.Aspect, ProjectionSettings.OrthogonalHeight * ProjectionSettings.Aspect, -ProjectionSettings.OrthogonalHeight, ProjectionSettings.OrthogonalHeight, ProjectionSettings.ClippingNear, ProjectionSettings.ClippingFar);
 			}
 		} else {
-			projection = GetOrthoProjMatrix(-11.0 * ProjectionSettings.Aspect, 11.0 * ProjectionSettings.Aspect, -11.0, 11.0, 0.01f, 500.0f);
+			projection = GetOrthoProjMatrix(-200.0 * ProjectionSettings.Aspect, 200.0 * ProjectionSettings.Aspect, -200.0, 200.0, 0.01f, 1000.0f);
 		}
 	}
 
@@ -519,6 +588,16 @@ private:
 	std::unique_ptr<Nexus::Texture2D> texture_checkerboard = nullptr;
 
     std::unique_ptr<Nexus::PointLight> point_light;
+
+    GLuint iteration = 0;
+    GLfloat lambda = 0.8f;
+    GLfloat alpha = 0.999f;
+    GLuint data_count, data_dims;
+    std::vector<GLfloat> high_dims_data;
+    std::vector<glm::vec3> projected_data;
+    std::vector<GLfloat> original_distance;
+    std::vector<GLfloat> projected_distance;
+    std::vector<GLfloat> data_sum;
 };
 
 int main() {
