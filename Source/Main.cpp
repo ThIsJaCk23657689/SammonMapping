@@ -25,15 +25,15 @@ public:
 		Settings.EnableDebugCallback = true;
 		Settings.EnableFullScreen = false;
 
-		Settings.EnableGhostMode = true;
+		Settings.EnableGhostMode = GL_FALSE;
 		Settings.EnableFaceCulling = true;
 		Settings.CullingTypeStr = "Back Face";
 		Settings.ShowOriginAnd3Axes = GL_TRUE;
 
 		// Projection Settings Initalize
-		ProjectionSettings.IsPerspective = true;
-		ProjectionSettings.OrthogonalHeight = 500.0f;
-		ProjectionSettings.ClippingNear = 0.1f;
+		ProjectionSettings.IsPerspective = GL_FALSE;
+		ProjectionSettings.OrthogonalHeight = 200.0f;
+		ProjectionSettings.ClippingNear = 0.01f;
 		ProjectionSettings.ClippingFar = 1000.0f;
 		ProjectionSettings.Aspect = (float)Settings.Width / (float)Settings.Height;
 	}
@@ -53,8 +53,8 @@ public:
 		// normalShader = std::make_unique<Nexus::Shader>("Shaders/normal_visualization.vs", "Shaders/normal_visualization.fs", "Shaders/normal_visualization.gs");
 		
 		// Create Camera
-		first_camera = std::make_unique<Nexus::FirstPersonCamera>(glm::vec3(0.0f, 3.0f, 42.0f));
-		third_camera = std::make_unique<Nexus::ThirdPersonCamera>(glm::vec3(0.0f, 0.0f, 5.0f));
+		first_camera = std::make_unique<Nexus::FirstPersonCamera>(glm::vec3(0.0f, 0.0f, 500.0f));
+		third_camera = std::make_unique<Nexus::ThirdPersonCamera>(glm::vec3(0.0f, 0.0f, 500.0f));
 		// first_camera->SetRestrict(true);
 		// first_camera->SetRestrictValue(glm::vec3(-10.0f, 0.0f, -10.0f), glm::vec3(10.0f, 20.0f, 10.0f));
 		// third_camera->SetRestrict(true);
@@ -67,15 +67,6 @@ public:
 		floor = std::make_unique<Nexus::Rectangle>(20.0f, 20.0f, 10.0f, Nexus::POS_Y);
 		cube = std::make_unique<Nexus::Cube>();
 		sphere = std::make_unique<Nexus::Sphere>();
-
-		view_volume = std::make_unique<Nexus::ViewVolume>();
-
-		// Loading textures
-		texture_checkerboard = Nexus::Texture2D::CreateFromFile("Resource/Textures/chessboard-metal.png", true);
-		texture_checkerboard->SetWrappingParams(GL_REPEAT, GL_REPEAT);
-
-        // Create a point light
-        point_light = std::make_unique<Nexus::PointLight>(glm::vec3(0.0f, 0.0f, 0.0f), true);
 
         // Loading High Dimension data
         Nexus::FileLoader::LoadHighDimensionData("Resource/Data/student.data", high_dims_data, data_count, data_dims);
@@ -120,26 +111,30 @@ public:
 	}
 
 	void Update() override {
-        // Lighting Setting
-        point_light->SetPosition(Settings.EnableGhostMode ? first_camera->GetPosition() : third_camera->GetPosition());
+	    // Setting camera
+	    third_camera->SetTarget(glm::vec3(0.0f));
 
         // Start iteration
-        if (iteration <= 1000000) {
-            for (GLuint i = 0; i < data_count; i++) {
-                for (GLuint j = i + 1; j < data_count; j++) {
+        if (is_training_start) {
+            if (iteration < iteration_max) {
+                for (GLuint i = 0; i < data_count; i++) {
+                    for (GLuint j = i + 1; j < data_count; j++) {
 
-                    GLfloat new_distance = glm::distance(projected_data[i], projected_data[j]);
-                    // std::cout << "(" << projected_data[i].x << ", " << projected_data[i].y << ") - (" << projected_data[j].x << ", " << projected_data[j].y << ") = " << new_distance << std::endl;
-                    if (new_distance <= 1e-5) new_distance = 1e-3;
+                        GLfloat new_distance = glm::distance(projected_data[i], projected_data[j]);
+                        if (new_distance <= 1e-5) new_distance = 1e-3;
 
-                    glm::vec3 delta_Qi = lambda * ((original_distance[i * data_count + j] - new_distance) / new_distance) * (projected_data[i] - projected_data[j]);
-                    glm::vec3 delta_Qj = -delta_Qi;
-                    projected_data[i] = projected_data[i] + delta_Qi;
-                    projected_data[j] = projected_data[j] + delta_Qj;
+                        glm::vec3 delta_Qi = lambda * ((original_distance[i * data_count + j] - new_distance) / new_distance) * (projected_data[i] - projected_data[j]);
+                        glm::vec3 delta_Qj = -delta_Qi;
+                        projected_data[i] = projected_data[i] + delta_Qi;
+                        projected_data[j] = projected_data[j] + delta_Qj;
+                    }
                 }
+                lambda = lambda * alpha;
+                iteration += 1;
+            } else {
+                is_training_start = GL_FALSE;
+                is_training_finished = GL_TRUE;
             }
-            lambda = lambda * alpha;
-            iteration += 1;
         }
 	}
 	
@@ -158,82 +153,29 @@ public:
 			glDisable(GL_CULL_FACE);
 		}
 
-        SetViewMatrix(Nexus::DISPLAY_MODE_ORTHOGONAL_Z);
-        SetProjectionMatrix(Nexus::DISPLAY_MODE_ORTHOGONAL_Z);
-        SetViewport(Nexus::DISPLAY_MODE_ORTHOGONAL_Z);
+        SetViewMatrix(Nexus::DISPLAY_MODE_DEFAULT);
+        SetProjectionMatrix(Nexus::DISPLAY_MODE_DEFAULT);
+        SetViewport(Nexus::DISPLAY_MODE_DEFAULT);
 
 		myShader->Use();
         myShader->SetMat4("view", view);
         myShader->SetMat4("projection", projection);
-        // myShader->SetVec3("viewPos", Settings.EnableGhostMode ? first_camera->GetPosition() : third_camera->GetPosition());
-        // myShader->SetVec3("lightPos", point_light->GetPosition());
-        // myShader->SetVec3("lightColor", point_light->GetDiffuse());
 
 		// ==================== Draw origin and 3 axes ====================
 		if (Settings.ShowOriginAnd3Axes) {
 			this->DrawOriginAnd3Axes(myShader.get());
 		}
 
-		// ==================== Draw a room ====================
-		/*
-		myShader->SetBool("material.enableDiffuseTexture", true);
-		myShader->SetBool("material.enableSpecularTexture", false);
-		myShader->SetBool("material.enableEmission", false);
-		myShader->SetBool("material.enableEmissionTexture", false);
-		myShader->SetFloat("material.shininess", 64.0f);
-
-        myShader->SetVec3("objectColor", glm::vec3(0.482352941, 0.68627451, 0.929411765));
-		model->Push();
-		floor->BindTexture(0, texture_checkerboard.get());
-		floor->Draw(myShader.get(), model->Top());
-
-		model->Push();
-		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 20.0f, 0.0f)));
-		model->Save(glm::rotate(model->Top(), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
-		floor->BindTexture(0, texture_checkerboard.get());
-		floor->Draw(myShader.get(), model->Top());
-		model->Pop();
-
-		model->Push();
-		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 10.0f, -10.0f)));
-		model->Save(glm::rotate(model->Top(), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
-		floor->BindTexture(0, texture_checkerboard.get());
-		floor->Draw(myShader.get(), model->Top());
-		model->Pop();
-
-		model->Push();
-		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 10.0f, 10.0f)));
-		model->Save(glm::rotate(model->Top(), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
-		floor->BindTexture(0, texture_checkerboard.get());
-		floor->Draw(myShader.get(), model->Top());
-		model->Pop();
-		
-		model->Push();
-		model->Save(glm::translate(model->Top(), glm::vec3(10.0f, 10.0f, 0.0f)));
-		model->Save(glm::rotate(model->Top(), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)));
-		floor->BindTexture(0, texture_checkerboard.get());
-		floor->Draw(myShader.get(), model->Top());
-		model->Pop();
-
-		model->Push();
-		model->Save(glm::translate(model->Top(), glm::vec3(-10.0f, 10.0f, 0.0f)));
-		model->Save(glm::rotate(model->Top(), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f)));
-		floor->BindTexture(0, texture_checkerboard.get());
-		floor->Draw(myShader.get(), model->Top());
-		model->Pop();
-		model->Pop();
-		*/
-
-
-		for (GLuint i = 0; i < projected_data.size(); i++) {
-            model->Push();
-            model->Save(glm::translate(model->Top(), projected_data[i]));
-            model->Save(glm::scale(model->Top(), glm::vec3(2.0f, 2.0f, 2.0f)));
-            myShader->SetVec3("objectColor", glm::vec3(0.8, data_sum[i], 0.6));
-            sphere->Draw(myShader.get(), model->Top());
-            model->Pop();
-
-            // std::cout << projected_data[i].x << ", " << projected_data[i].y << std::endl;
+		// ==================== Draw the projected data on the 2D space ====================
+		if (is_training_start || is_training_finished) {
+            for (GLuint i = 0; i < projected_data.size(); i++) {
+                model->Push();
+                model->Save(glm::translate(model->Top(), projected_data[i]));
+                model->Save(glm::scale(model->Top(), glm::vec3(2.0f, 2.0f, 2.0f)));
+                myShader->SetVec3("objectColor", glm::vec3(0.8, data_sum[i], 0.6));
+                sphere->Draw(myShader.get(), model->Top());
+                model->Pop();
+            }
 		}
 
 		// third_camera->SetTarget(balls[0].GetPosition());
@@ -242,10 +184,33 @@ public:
 
 	void ShowDebugUI() override {
 
-        ImGui::Begin("Iteration");
-        ImGui::Text("Iteration %d", iteration);
-        ImGui::Text("Lambda %.8f", lambda);
-        ImGui::Text("Alpha %.3f", alpha);
+        ImGui::Begin("Sammon Mapping");
+        ImGui::Text("Iteration: %d / %d", iteration, iteration_max);
+        if (!is_training_start) {
+            ImGui::InputText("Max Iteration", iteration_max_string, IM_ARRAYSIZE(iteration_max_string));
+            ImGui::SliderFloat("Learning rate", &lambda, 0.0f, 1.0f, "%.8f");
+            ImGui::SliderFloat("Decay", &alpha, 0.0f, 1.0f, "%.3f");
+            if (ImGui::Button("Start Training")) {
+                iteration_max = static_cast<GLuint>(std::stoi(std::string(iteration_max_string)));
+                is_training_start = GL_TRUE;
+                is_training_finished = GL_FALSE;
+            }
+            ImGui::SameLine();
+            if (!is_training_start && is_training_finished) {
+                if (ImGui::Button("Reset Parameters")) {
+                    lambda = 1.0f;
+                    alpha = 0.999f;
+                    iteration = 0;
+                }
+            }
+        } else {
+            ImGui::Text("Learning rate: %.8f", lambda);
+            ImGui::Text("Decay: %.3f", alpha);
+            if (ImGui::Button("Stop")) {
+                is_training_start = GL_FALSE;
+                is_training_finished = GL_TRUE;
+            }
+        }
         ImGui::End();
 
 		ImGui::Begin("Control Panel");
@@ -261,9 +226,9 @@ public:
 					ImGui::BulletText("Distance: %.2f", third_camera->GetDistance());
 				}
 				if (ImGui::Button("Reset Position")) {
-					first_camera->SetPosition(glm::vec3(0.0f, 3.0f, 5.0f));
-					first_camera->SetPitch(0.0f);
-					first_camera->SetYaw(0.0f);
+					third_camera->SetPosition(glm::vec3(0.0f, 0.0f, 500.0f));
+                    third_camera->SetPitch(0.0f);
+                    third_camera->SetYaw(0.0f);
 				}
 				ImGui::EndTabItem();
 			}
@@ -274,41 +239,12 @@ public:
 				ImGui::Text("Parameters");
 				ImGui::BulletText("FoV = %.2f deg, Aspect = %.2f", Settings.EnableGhostMode ? first_camera->GetFOV() : third_camera->GetFOV(), ProjectionSettings.Aspect);
 				if (!ProjectionSettings.IsPerspective) {
-					ImGui::SliderFloat("Length", &ProjectionSettings.OrthogonalHeight, 1.0f, 100.0f);
+					ImGui::SliderFloat("Length", &ProjectionSettings.OrthogonalHeight, 1.0f, 400.0f);
 				}
-				ImGui::BulletText("left: %.2f, right: %.2f ", view_volume->ClippingParameters[2], view_volume->ClippingParameters[3]);
-				ImGui::BulletText("bottom: %.2f, top: %.2f ", view_volume->ClippingParameters[0], view_volume->ClippingParameters[1]);
-				ImGui::DragFloatRange2("Near & Far", &ProjectionSettings.ClippingNear, &ProjectionSettings.ClippingFar, 0.1f, 0.1f, 500.0f);
-				ImGui::Spacing();
-
-				if (ImGui::TreeNode("Projection Matrix")) {
-					SetProjectionMatrix(Nexus::DISPLAY_MODE_DEFAULT);
-					glm::mat4 proj = projection;
-
-					ImGui::Columns(4, "mycolumns");
-					ImGui::Separator();
-					for (int i = 0; i < 4; i++) {
-						ImGui::Text("%.2f", proj[0][i]); ImGui::NextColumn();
-						ImGui::Text("%.2f", proj[1][i]); ImGui::NextColumn();
-						ImGui::Text("%.2f", proj[2][i]); ImGui::NextColumn();
-						ImGui::Text("%.2f", proj[3][i]); ImGui::NextColumn();
-						ImGui::Separator();
-						
-					}
-					ImGui::Columns(1);
-
-					ImGui::TreePop();
-				}
+				ImGui::DragFloatRange2("Near & Far", &ProjectionSettings.ClippingNear, &ProjectionSettings.ClippingFar, 0.01f, 0.01f, 1000.0f);
 				ImGui::Spacing();
 				ImGui::EndTabItem();
 			}
-
-            if (ImGui::BeginTabItem("Light Setting")) {
-                // 新增 Light Position
-                ImGui::SliderFloat3("Light Color", point_light->GetDiffusePointer(), 0.0f, 1.0f);
-
-                ImGui::EndTabItem();
-            }
 
 			if (ImGui::BeginTabItem("Illustration")) {
 				ImGui::Text("Current Screen: %d", Settings.CurrentDisplyMode);
@@ -343,35 +279,31 @@ public:
 	void DrawOriginAnd3Axes(Nexus::Shader* shader) const {
 		// Draw the origin (0, 0, 0)
 		model->Push();
-		model->Save(glm::scale(model->Top(), glm::vec3(0.1f, 0.1f, 0.1f)));
-        shader->SetVec3("objectColor", glm::vec3(0.2, 0.2, 0.2));
-		// shader->SetFloat("material.shininess", 64.0f);
+		model->Save(glm::scale(model->Top(), glm::vec3(4.0f, 4.0f, 4.0f)));
+        shader->SetVec3("objectColor", glm::vec3(0.6, 0.6, 0.6));
 		sphere->Draw(shader, model->Top());
 		model->Pop();
 
 		// Draw x, y ,z axes.
 		model->Push();
 		model->Push();
-		model->Save(glm::translate(model->Top(), glm::vec3(5.0f, 0.0f, 0.0f)));
-		model->Save(glm::scale(model->Top(), glm::vec3(10.0f, 0.05f, 0.05f)));
+		model->Save(glm::translate(model->Top(), glm::vec3(100.0f, 0.0f, 0.0f)));
+		model->Save(glm::scale(model->Top(), glm::vec3(200.0f, 1.0f, 1.0f)));
         shader->SetVec3("objectColor", glm::vec3(1.0, 0.0, 0.0));
-		// shader->SetFloat("material.shininess", 64.0f);
 		cube->Draw(shader, model->Top());
 		model->Pop();
 
 		model->Push();
-		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 5.0f, 0.0f)));
-		model->Save(glm::scale(model->Top(), glm::vec3(0.05f, 10.0f, 0.05f)));
+		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 100.0f, 0.0f)));
+		model->Save(glm::scale(model->Top(), glm::vec3(1.0f, 200.0f, 1.0f)));
         shader->SetVec3("objectColor", glm::vec3(0.0, 1.0, 0.0));
-		// shader->SetFloat("material.shininess", 64.0f);
 		cube->Draw(shader, model->Top());
 		model->Pop();
 
 		model->Push();
-		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 0.0f, 5.0f)));
-		model->Save(glm::scale(model->Top(), glm::vec3(0.05f, 0.05f, 10.0f)));
+		model->Save(glm::translate(model->Top(), glm::vec3(0.0f, 0.0f, 100.0f)));
+		model->Save(glm::scale(model->Top(), glm::vec3(1.0f, 1.0f, 200.0f)));
         shader->SetVec3("objectColor", glm::vec3(0.0, 0.0, 1.0));
-		// shader->SetFloat("material.shininess", 64.0f);
 		cube->Draw(shader, model->Top());
 		model->Pop();
 		model->Pop();
@@ -478,15 +410,18 @@ public:
 			}
 		}
 
-		if (key == GLFW_KEY_G) {
-			if (Settings.EnableGhostMode) {
-				Settings.EnableGhostMode = false;
-				Nexus::Logger::Message(Nexus::LOG_INFO, "Camera Mode: Third Person");
-			} else {
-				Settings.EnableGhostMode = true;
-				Nexus::Logger::Message(Nexus::LOG_INFO, "Camera Mode: First Person");
-			}
+        /*
+        if (key == GLFW_KEY_G) {
+
+            if (Settings.EnableGhostMode) {
+                Settings.EnableGhostMode = false;
+                Nexus::Logger::Message(Nexus::LOG_INFO, "Camera Mode: Third Person");
+            } else {
+                Settings.EnableGhostMode = true;
+                Nexus::Logger::Message(Nexus::LOG_INFO, "Camera Mode: First Person");
+            }
 		}
+        */
 
 		// 分鏡切換
 		if (key == GLFW_KEY_1) {
@@ -556,14 +491,14 @@ public:
 	}
 
 	void AdjustOrthogonalProjectionWidth(float yoffset) {
-		if (ProjectionSettings.OrthogonalHeight >= 1.0f && ProjectionSettings.OrthogonalHeight <= 100.0f) {
-			ProjectionSettings.OrthogonalHeight -= (float)yoffset * 1.0f;
+		if (ProjectionSettings.OrthogonalHeight >= 1.0f && ProjectionSettings.OrthogonalHeight <= 500.0f) {
+			ProjectionSettings.OrthogonalHeight -= (float)yoffset * 20.0f;
 		}
 		if (ProjectionSettings.OrthogonalHeight < 1.0f) {
 			ProjectionSettings.OrthogonalHeight = 1.0f;
 		}
-		if (ProjectionSettings.OrthogonalHeight > 100.0f) {
-			ProjectionSettings.OrthogonalHeight = 100.0f;
+		if (ProjectionSettings.OrthogonalHeight > 500.0f) {
+			ProjectionSettings.OrthogonalHeight = 500.0f;
 		}
 	}
 	
@@ -583,13 +518,12 @@ private:
 	std::unique_ptr<Nexus::Rectangle> floor = nullptr;
 	std::unique_ptr<Nexus::Cube> cube = nullptr;
 	std::unique_ptr<Nexus::Sphere> sphere = nullptr;
-	std::unique_ptr<Nexus::ViewVolume> view_volume = nullptr;
 
-	std::unique_ptr<Nexus::Texture2D> texture_checkerboard = nullptr;
-
-    std::unique_ptr<Nexus::PointLight> point_light;
-
+    GLboolean is_training_start = GL_FALSE;
+    GLboolean is_training_finished = GL_FALSE;
     GLuint iteration = 0;
+    char iteration_max_string[128] = "20000";
+    GLuint iteration_max = 10000;
     GLfloat lambda = 0.8f;
     GLfloat alpha = 0.999f;
     GLuint data_count, data_dims;
