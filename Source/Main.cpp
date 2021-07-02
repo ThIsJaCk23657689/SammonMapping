@@ -5,13 +5,11 @@
 #include "Shader.h"
 #include "MatrixStack.h"
 #include "FileLoader.h"
-#include "Texture2D.h"
-#include "Light.h"
 
 #include "Rectangle.h"
 #include "Cube.h"
 #include "Sphere.h"
-#include "ViewVolume.h"
+
 #include <random>
 
 std::mt19937_64 rand_generator;
@@ -46,19 +44,11 @@ public:
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 		// Create shader program
-		// myShader = std::make_unique<Nexus::Shader>("Shaders/lighting.vert", "Shaders/lighting.frag");
 		myShader = std::make_unique<Nexus::Shader>("Shaders/simple_lighting.vert", "Shaders/simple_lighting.frag");
-		// simpleDepthShader = std::make_unique<Nexus::Shader>("Shaders/simple_depth_shader.vert", "Shaders/simple_depth_shader.frag");
-		// debugDepthQuad = std::make_unique<Nexus::Shader>("Shaders/debug_quad.vert", "Shaders/debug_quad_depth.frag");
-		// normalShader = std::make_unique<Nexus::Shader>("Shaders/normal_visualization.vs", "Shaders/normal_visualization.fs", "Shaders/normal_visualization.gs");
 		
 		// Create Camera
 		first_camera = std::make_unique<Nexus::FirstPersonCamera>(glm::vec3(0.0f, 0.0f, 500.0f));
 		third_camera = std::make_unique<Nexus::ThirdPersonCamera>(glm::vec3(0.0f, 0.0f, 500.0f));
-		// first_camera->SetRestrict(true);
-		// first_camera->SetRestrictValue(glm::vec3(-10.0f, 0.0f, -10.0f), glm::vec3(10.0f, 20.0f, 10.0f));
-		// third_camera->SetRestrict(true);
-		// third_camera->SetRestrictValue(glm::vec3(-10.0f, 0.0f, -10.0f), glm::vec3(10.0f, 20.0f, 10.0f));
 
 		// Create Matrix Stack
 		model = std::make_unique<Nexus::MatrixStack>();
@@ -177,9 +167,6 @@ public:
                 model->Pop();
             }
 		}
-
-		// third_camera->SetTarget(balls[0].GetPosition());
-		// ImGui::ShowDemoWindow();
 	}
 
 	void ShowDebugUI() override {
@@ -319,7 +306,7 @@ public:
 				view = glm::lookAt(glm::vec3(0.0f, 20.0f, 0.0f), glm::vec3(0.0f), glm::vec3(0.0, 0.0, -1.0));
 				break;
 			case Nexus::DISPLAY_MODE_ORTHOGONAL_Z:
-				view = glm::lookAt(glm::vec3(0.0f, 0.0f, 500.0f), glm::vec3(0.0f, 0.f, 0.0f), glm::vec3(0.0, 1.0, 0.0));
+				view = glm::lookAt(glm::vec3(0.0f, 10.0f, 10.0f), glm::vec3(0.0f, 10.f, 0.0f), glm::vec3(0.0, 1.0, 0.0));
 				break;
 			case Nexus::DISPLAY_MODE_DEFAULT:
 				view = Settings.EnableGhostMode ? first_camera->GetViewMatrix() : third_camera->GetViewMatrix();
@@ -337,7 +324,7 @@ public:
 				projection = GetOrthoProjMatrix(-ProjectionSettings.OrthogonalHeight * ProjectionSettings.Aspect, ProjectionSettings.OrthogonalHeight * ProjectionSettings.Aspect, -ProjectionSettings.OrthogonalHeight, ProjectionSettings.OrthogonalHeight, ProjectionSettings.ClippingNear, ProjectionSettings.ClippingFar);
 			}
 		} else {
-			projection = GetOrthoProjMatrix(-200.0 * ProjectionSettings.Aspect, 200.0 * ProjectionSettings.Aspect, -200.0, 200.0, 0.01f, 1000.0f);
+			projection = GetOrthoProjMatrix(-11.0 * ProjectionSettings.Aspect, 11.0 * ProjectionSettings.Aspect, -11.0, 11.0, 0.01f, 1000.0f);
 		}
 	}
 
@@ -367,29 +354,10 @@ public:
 	}
 	
 	void OnProcessInput(int key) override {
-		if (Settings.EnableGhostMode) {
-			if (key == GLFW_KEY_W) {
-				first_camera->ProcessKeyboard(Nexus::CAMERA_FORWARD, DeltaTime);
-			}
-			if (key == GLFW_KEY_S) {
-				first_camera->ProcessKeyboard(Nexus::CAMERA_BACKWARD, DeltaTime);
-			}
-			if (key == GLFW_KEY_A) {
-				first_camera->ProcessKeyboard(Nexus::CAMERA_LEFT, DeltaTime);
-			}
-			if (key == GLFW_KEY_D) {
-				first_camera->ProcessKeyboard(Nexus::CAMERA_RIGHT, DeltaTime);
-			}
-		}
+
 	}
 	
 	void OnKeyPress(int key) override {
-		if (key == GLFW_KEY_LEFT_SHIFT) {
-			if (Settings.EnableGhostMode) {
-				first_camera->SetMovementSpeed(50.0f);
-			}
-		}
-
 		if (key == GLFW_KEY_X) {
 			if (Settings.ShowOriginAnd3Axes) {
 				Settings.ShowOriginAnd3Axes = false;
@@ -399,59 +367,10 @@ public:
 				Nexus::Logger::Message(Nexus::LOG_INFO, "World coordinate origin and 3 axes: [Show].");
 			}
 		}
-
-		if (key == GLFW_KEY_P) {
-			if (ProjectionSettings.IsPerspective) {
-				ProjectionSettings.IsPerspective = false;
-				Nexus::Logger::Message(Nexus::LOG_INFO, "Projection Mode: Orthogonal");
-			} else {
-				ProjectionSettings.IsPerspective = true;
-				Nexus::Logger::Message(Nexus::LOG_INFO, "Projection Mode: Perspective");
-			}
-		}
-
-        /*
-        if (key == GLFW_KEY_G) {
-
-            if (Settings.EnableGhostMode) {
-                Settings.EnableGhostMode = false;
-                Nexus::Logger::Message(Nexus::LOG_INFO, "Camera Mode: Third Person");
-            } else {
-                Settings.EnableGhostMode = true;
-                Nexus::Logger::Message(Nexus::LOG_INFO, "Camera Mode: First Person");
-            }
-		}
-        */
-
-		// 分鏡切換
-		if (key == GLFW_KEY_1) {
-			Settings.CurrentDisplyMode = Nexus::DISPLAY_MODE_ORTHOGONAL_X;
-			Nexus::Logger::Message(Nexus::LOG_INFO, "Switch to Orthogonal X.");
-		}
-		if (key == GLFW_KEY_2) {
-			Settings.CurrentDisplyMode = Nexus::DISPLAY_MODE_ORTHOGONAL_Y;
-			Nexus::Logger::Message(Nexus::LOG_INFO, "Switch to Orthogonal Y.");
-		}
-		if (key == GLFW_KEY_3) {
-			Settings.CurrentDisplyMode = Nexus::DISPLAY_MODE_ORTHOGONAL_Z;
-			Nexus::Logger::Message(Nexus::LOG_INFO, "Switch to Orthogonal Z.");
-		}
-		if (key == GLFW_KEY_4) {
-			Settings.CurrentDisplyMode = Nexus::DISPLAY_MODE_DEFAULT;
-			Nexus::Logger::Message(Nexus::LOG_INFO, "Switch to Default Camera.");
-		}
-		if (key == GLFW_KEY_5) {
-			Settings.CurrentDisplyMode = Nexus::DISPLAY_MODE_3O1P;
-			Nexus::Logger::Message(Nexus::LOG_INFO, "Switch to All Screen.");
-		}
 	}
 	
 	void OnKeyRelease(int key) override {
-		if (key == GLFW_KEY_LEFT_SHIFT) {
-			if (Settings.EnableGhostMode) {
-				first_camera->SetMovementSpeed(10.0f);
-			}
-		}
+
 	}
 	
 	void OnMouseMove(int xoffset, int yoffset) override {
@@ -504,9 +423,6 @@ public:
 	
 private:
 	std::unique_ptr<Nexus::Shader> myShader = nullptr;
-	std::unique_ptr<Nexus::Shader> normalShader = nullptr;
-	std::unique_ptr<Nexus::Shader> simpleDepthShader = nullptr;
-	std::unique_ptr<Nexus::Shader> debugDepthQuad = nullptr;
 	
 	std::unique_ptr<Nexus::FirstPersonCamera> first_camera = nullptr;
 	std::unique_ptr<Nexus::ThirdPersonCamera> third_camera = nullptr;
@@ -522,8 +438,8 @@ private:
     GLboolean is_training_start = GL_FALSE;
     GLboolean is_training_finished = GL_FALSE;
     GLuint iteration = 0;
-    char iteration_max_string[128] = "20000";
-    GLuint iteration_max = 10000;
+    char iteration_max_string[128] = "5000";
+    GLuint iteration_max = 5000;
     GLfloat lambda = 0.8f;
     GLfloat alpha = 0.999f;
     GLuint data_count, data_dims;
